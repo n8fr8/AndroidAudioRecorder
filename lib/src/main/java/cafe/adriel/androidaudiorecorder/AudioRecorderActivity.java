@@ -1,12 +1,17 @@
 package cafe.adriel.androidaudiorecorder;
 
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.ColorDrawable;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.media.MediaRecorder;
+import android.os.Build;
 import android.os.Bundle;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -21,6 +26,7 @@ import com.cleveroad.audiovisualization.GLAudioVisualizationView;
 import java.io.File;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.UUID;
 
 import cafe.adriel.androidaudiorecorder.model.AudioChannel;
 import cafe.adriel.androidaudiorecorder.model.AudioSampleRate;
@@ -42,7 +48,9 @@ public class AudioRecorderActivity extends AppCompatActivity
     private boolean keepDisplayOn;
 
     private MediaPlayer player;
-    private Recorder recorder;
+   // private Recorder recorder;
+    private MediaRecorder recorder;
+
     private VisualizerHandler visualizerHandler;
 
     private Timer timer;
@@ -58,6 +66,7 @@ public class AudioRecorderActivity extends AppCompatActivity
     private ImageButton restartView;
     private ImageButton recordView;
     private ImageButton playView;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -279,11 +288,52 @@ public class AudioRecorderActivity extends AppCompatActivity
         if(recorder == null) {
             timerView.setText("00:00:00");
 
+            /**
             recorder = OmRecorder.wav(
                     new PullTransport.Default(Util.getMic(source, channel, sampleRate), AudioRecorderActivity.this),
                     new File(filePath));
+             **/
+
+
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am.getMode() == AudioManager.MODE_NORMAL) {
+
+                recorder = new MediaRecorder();
+                recorder.setAudioSource(source.getSource());
+                recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+                recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+
+                if (channel == AudioChannel.MONO)
+                    recorder.setAudioChannels(1);
+                else
+                    recorder.setAudioChannels(2);
+
+                recorder.setAudioEncodingBitRate(96000);
+                recorder.setAudioSamplingRate(sampleRate.getSampleRate());
+
+                recorder.setOutputFile(filePath);
+
+                try {
+                    recorder.prepare();
+                    recorder.start();
+                } catch (Exception e) {
+                    Log.e(getClass().getName(), "couldn't start audio", e);
+                }
+
+
+            }
+
+
         }
-        recorder.resumeRecording();
+        else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                recorder.resume();
+            }
+            else
+            {
+                recorder.start();
+            }
+        }
 
         startTimer();
     }
@@ -306,7 +356,14 @@ public class AudioRecorderActivity extends AppCompatActivity
         }
 
         if (recorder != null) {
-            recorder.pauseRecording();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                recorder.pause();
+            }
+            else
+            {
+                recorder.stop();
+            }
+
         }
 
         stopTimer();
@@ -320,7 +377,7 @@ public class AudioRecorderActivity extends AppCompatActivity
 
         recorderSecondsElapsed = 0;
         if (recorder != null) {
-            recorder.stopRecording();
+            recorder.stop();
             recorder = null;
         }
 
@@ -400,6 +457,11 @@ public class AudioRecorderActivity extends AppCompatActivity
             timer.purge();
             timer = null;
         }
+
+        if (visualizerHandler != null)
+        visualizerHandler.onDataReceived(0f);
+
+
     }
 
     private void updateTimer() {
@@ -409,6 +471,7 @@ public class AudioRecorderActivity extends AppCompatActivity
                 if(isRecording) {
                     recorderSecondsElapsed++;
                     timerView.setText(Util.formatSeconds(recorderSecondsElapsed));
+                    visualizerHandler.onDataReceived((float)recorder.getMaxAmplitude());
                 } else if(isPlaying()){
                     playerSecondsElapsed++;
                     timerView.setText(Util.formatSeconds(playerSecondsElapsed));
@@ -416,4 +479,6 @@ public class AudioRecorderActivity extends AppCompatActivity
             }
         });
     }
+
+
 }
